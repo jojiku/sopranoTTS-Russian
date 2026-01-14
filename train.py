@@ -149,11 +149,21 @@ def compute_loss(logits, y, tokenizer, device):
     audio_end = tokenizer.convert_tokens_to_ids('[7999]')
     audio_mask = torch.logical_and(y >= audio_start, y <= audio_end).view(-1)
     
+    russian_token_ids = set()
+    for char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ":
+        token_id = tokenizer.convert_tokens_to_ids(char)
+        if token_id != tokenizer.unk_token_id:
+            russian_token_ids.add(token_id)
+    
+    russian_mask = torch.tensor([l.item() in russian_token_ids for l in labels], device=device)
+    
     audio_loss = loss[audio_mask].mean() if audio_mask.any() else torch.tensor(0.0).to(device)
     text_loss = loss[~audio_mask].mean() if (~audio_mask).any() else torch.tensor(0.0).to(device)
+    russian_loss = loss[russian_mask].mean() if russian_mask.any() else torch.tensor(0.0).to(device)
+    
     acc = (logits.argmax(dim=-1) == y).view(-1)[audio_mask].float().mean() if audio_mask.any() else torch.tensor(0.0).to(device)
     
-    return audio_loss, text_loss, acc
+    return audio_loss, text_loss, russian_loss, acc
 
 
 @torch.no_grad()
@@ -165,7 +175,7 @@ def evaluate(model, dataloader, tokenizer, device, device_type):
         x, y = x.to(device), y.to(device)
         with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
             logits = model(x).logits
-            audio_loss, _, acc = compute_loss(logits, y, tokenizer, device)
+            audio_loss, text_loss, russian_loss, acc = compute_loss(logits, y, tokenizer, device)
         total_loss += audio_loss.item()
         total_acc += acc.item()
         n += 1
@@ -224,6 +234,7 @@ def main():
         print(f"\n{'='*50}\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
         
         epoch_loss, epoch_acc, epoch_steps = 0.0, 0.0, 0
+        epoch_text_loss, epoch_russian_loss = 0.0, 0.0
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
         
         for x, y in pbar:
@@ -232,7 +243,7 @@ def main():
             
             with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
                 logits = model(x).logits
-                audio_loss, text_loss, acc = compute_loss(logits, y, tokenizer, device)
+                audio_loss, text_loss, russian_loss, acc  = compute_loss(logits, y, tokenizer, device)
             
             audio_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -243,11 +254,13 @@ def main():
             optimizer.step()
             
             epoch_loss += audio_loss.item()
+            epoch_text_loss += text_loss.item()
+            epoch_russian_loss += russian_loss.item()
             epoch_acc += acc.item()
             epoch_steps += 1
             global_step += 1
             
-            pbar.set_postfix(loss=f'{audio_loss.item():.3f}', acc=f'{acc.item():.4f}', lr=f'{lr:.1e}')
+            pbar.set_postfix(loss=f'{audio_loss.item():.3f}', text=f'{text_loss.item():.3f}', rus=f'{russian_loss.item():.3f}', acc=f'{acc.item():.4f}', lr=f'{lr:.1e}')
             
             # Eval & Save
             if global_step % args.eval_steps == 0:
@@ -264,7 +277,7 @@ def main():
         avg_loss = epoch_loss / epoch_steps
         val_loss, val_acc = evaluate(model, val_loader, tokenizer, device, device_type)
         print(f"\nEpoch {epoch+1} Summary:")
-        print(f"  Train Loss: {avg_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+        print(f"  Train Loss: {avg_loss:.4f} | Text: {epoch_text_loss/epoch_steps:.4f} | Russian: {epoch_russian_loss/epoch_steps:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
         
         checkpoint_mgr.save(model, tokenizer, optimizer, global_step, epoch+1, val_loss, avg_loss)
     

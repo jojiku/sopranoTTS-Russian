@@ -22,3 +22,4 @@ wav_converter.py
 dataset/dataset.zip
 
 dataset/metadata.txt
+RussianSoprano/model.safetensors
