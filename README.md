@@ -6,20 +6,20 @@ By using just 2 hours of russian speech:
 ```bash
 python expand_tokenizer.py \
     --dataset ./dataset \
-    --output ./models/soprano-russian-base \
+    --output ./RussianSoprano \
     --model ekwek/Soprano-80M
 ```
 
 2. Generate Audio Tokens 
 ```bash
-python generate_dataset. py --input-dir ./dataset
+python generate_dataset.py --input-dir ./dataset
 ```
 
 3. Train the Model
 ```bash
 python train.py \
     --input-dir ./dataset \
-    --save-dir ./checkpoints/exp_minimal \
+    --save-dir ./checkpoints/ \
     --model-path ./RussianSoprano/ \
     --epochs 5 \
     --batch-size 2 \
