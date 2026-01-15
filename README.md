@@ -7,7 +7,7 @@ By using just 2 hours of russian speech:
 python expand_tokenizer.py \
     --dataset ./dataset \
     --output ./RussianSoprano \
-    --model ekwek/Soprano-80M
+    --model ekwek/Soprano-1.1-80M
 ```
 
 2. Generate Audio Tokens 
